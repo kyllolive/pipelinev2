@@ -23,8 +23,6 @@ def main():
         for html_file in html_files:
             extraction_result = extract_document(args.doc_type, html_file)
             results.append(extraction_result)
-        
-        print(results)
 
         #Build proponent ids column    
     except Exception as e:
