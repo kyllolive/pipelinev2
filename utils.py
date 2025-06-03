@@ -73,7 +73,7 @@ def extract_resolution_number(p_text, text_content):
     return None
 
 
-def extract_title(p_text, text_content, result, document_type, filename):
+def extract_title(soup, text_content, result):
     """
     Extract the title based on document type with specific rules.
 
@@ -84,83 +84,52 @@ def extract_title(p_text, text_content, result, document_type, filename):
         document_type: Type of document ('ordinance' or 'resolution')
         filename: Original filename for fallback
     """
+    title_prefixes = ["AN ORDINANCE", "A RESOLUTION"]
 
-    def clean_title(title):
-        """Clean and standardize title text."""
-        # Remove multiple whitespace and normalize
-        title = re.sub(r"\s+", " ", title).strip()
-        # Remove common noise patterns
-        title = re.sub(r"[\r\n]+", " ", title)
-        # Remove duplicate prefixes
-        title = re.sub(
-            r"(AN ORDINANCE|A RESOLUTION)\s+\1", r"\1", title, flags=re.IGNORECASE
-        )
-        return title
+    title = None
 
-    def extract_ordinance_title():
-        """Extract title for ordinance documents."""
-        # Look for the full ordinance title pattern
-        patterns = [
-            r"AN ORDINANCE\s+(.*?)(?=(?:BE IT ORDAINED|SECTION 1\.|\n\n|WHEREAS|;))",
-            r"AN ORDINANCE\s+(.*?)(?=\n\n)",
-            r"AN ORDINANCE\s+(.*)",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text_content, re.IGNORECASE | re.DOTALL)
-            if match:
-                title = f"AN ORDINANCE {match.group(1).strip()}"
-                return clean_title(title)
-
-        if result["ordinance_number"]:
-            return f"AN ORDINANCE {result['ordinance_number']}"
-
-        # Last resort: use filename
-        return f"AN ORDINANCE {os.path.splitext(os.path.basename(filename))[0]}"
-
-    def extract_resolution_title():
-        patterns = [
-            r"A RESOLUTION\s+(.*?)(?=(?:BE IT RESOLVED|SECTION 1\.|\n\n|WHEREAS|;))",
-            r"A RESOLUTION\s+(.*?)(?=\n\n)",
-            r"A RESOLUTION\s+(.*)",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text_content, re.IGNORECASE | re.DOTALL)
-            if match:
-                title = f"A RESOLUTION {match.group(1).strip()}"
-                return clean_title(title)
-
-        if result["resolution_number"]:
-            return f"RESOLUTION NO. {result['resolution_number']}"
-
-        return None
-
-    document_type = document_type.lower()
-
-    if document_type == "ordinance":
-        result["title"] = extract_ordinance_title()
-        return True
-    elif document_type == "resolution":
-        title = extract_resolution_title()
+    for p in soup.find_all("p"):
+        p_text = p.get_text().strip()
+        for prefix in title_prefixes:
+            if prefix in p_text.upper():
+                title = p_text
+                break
         if title:
             result["title"] = title
             return True
+        
+    if title is None:
+        title_match = None
+        for prefix in title_prefixes:
+            pattern = rf"{prefix}(.*?)(?:Be it|SECTION 1|\n\n|WHEREAS)"
+            match = re.search(pattern, text_content, re.IGNORECASE | re.DOTALL)
+            if match:
+                title_match = match
+                break
+        if title_match:
+            title_text = title_match.group(1).strip()
+            title = f"{prefix} {title_text}"
+            clean_title = re.sub(r"\s+", " ", title)
+            result["title"] = clean_title
+            return True
+
+    # Fallback: Try to construct title from document number if available
+    if result.get("document_type") == "ordinance":
+        result["title"] = f"ORDINANCE NO. {result['ordinance_number']}"
+        return True
+    elif result.get("document_type") == "resolution":
+        result["title"] = f"RESOLUTION NO. {result['resolution_number']}"
+        return True
 
     return False
 
-
-def extract_proponent(p_text, text_content, result):
+def extract_proponent(soup, text_content, result):
     """
     Extract the proponent from the document text.
     """
-
-    def debug_print(msg, text_sample):
-        print(f"DEBUG - {msg}: {text_sample[:200]}...")
-
-    debug_print("Processing paragraph", p_text)
-
     # First try: Direct keyword matches
+    proponent = None
+
     proponent_keywords = [
         "Author:",
         "AUTHORS:",
@@ -170,69 +139,93 @@ def extract_proponent(p_text, text_content, result):
         "Proponents:",
         "PROPONENTS:",
         "PROPONENT:",
-        "By Hon.",  # Adding common pattern
-        "BY HON.",
     ]
+    for p in soup.find_all("p"):
+        p_text = p.get_text().strip()
 
-    # Check for keyword matches in both p_text and full text_content
-    for keyword in proponent_keywords:
-        # Check in current paragraph
-        if keyword in p_text:
-            debug_print(f"Found keyword {keyword} in paragraph", p_text)
-            text_after_keyword = p_text[p_text.find(keyword) + len(keyword) :].strip()
-            hon_pattern = r"(?:HON\.|Hon\.|hon\.|BY HON\.|By Hon\.)\s*([A-Z][A-Za-z\.\s,]+?)(?=(?:,?\s*(?:HON\.|Hon\.|and|AND|$)))"
-            hon_matches = re.findall(hon_pattern, text_after_keyword, re.IGNORECASE)
+  
+        if any(keyword in p_text for keyword in proponent_keywords):
+    
+            for keyword in proponent_keywords:
+                if keyword in p_text:
+                    p_text = p_text.replace(keyword, "").strip()
+                    break
+            hon_pattern = r"(HON\.\s+[A-Z][A-Za-z\.\s,]+?)(?=,?\s*HON\.|$)"
+            hon_matches = re.findall(hon_pattern, p_text)
 
             if hon_matches:
-                result["proponent"] = ", ".join(
-                    name.strip().upper() for name in hon_matches
-                )
-                debug_print("Extracted proponents from keyword", result["proponent"])
-                return True
+         
+                result["proponent"] = ", ".join(hon_matches)
+            else:
+                result["proponent"] = None 
+            break
+    if result["proponent"] is None:
+        for p in soup.find_all("p"):
+            p_text = p.get_text().strip()
+            if (
+                "after due deliberation" in p_text.lower()
+                and "on motion of" in p_text.lower()
+            ):
+                print(f"Found target paragraph: {p_text[:100]}...")
 
-        # Check in full text if not found in paragraph
-        if keyword in text_content:
-            debug_print(f"Found keyword {keyword} in full text", text_content)
-            lines = text_content.split("\n")
-            for line in lines:
-                if keyword in line:
-                    hon_pattern = r"(?:HON\.|Hon\.|hon\.|BY HON\.|By Hon\.)\s*([A-Z][A-Za-z\.\s,]+?)(?=(?:,?\s*(?:HON\.|Hon\.|and|AND|$)))"
-                    hon_matches = re.findall(hon_pattern, line, re.IGNORECASE)
-                    if hon_matches:
-                        result["proponent"] = ", ".join(
-                            name.strip().upper() for name in hon_matches
-                        )
-                        debug_print(
-                            "Extracted proponents from full text", result["proponent"]
-                        )
-                        return True
+                # Get the text after "on motion of"
+                start_phrase = "on motion of"
+                start_pos = p_text.lower().find(start_phrase) + len(start_phrase)
 
-    # Second try: Motion pattern
-    motion_patterns = [
-        r"(?:on\s+motion\s+of|moved\s+by)\s+((?:HON\.|Hon\.|hon\.)\s*[A-Z][A-Za-z\.\s,]+?)(?=(?:,|\sand\s|seconded|duly|resolved))",
-        r"(?:after\s+due\s+deliberation\s+(?:and\s+)?on\s+motion\s+of)\s+((?:HON\.|Hon\.|hon\.)\s*[A-Z][A-Za-z\.\s,]+?)(?=(?:,|\sand\s|seconded|duly|resolved))",
-    ]
+                # Look for various phrases that would end the proponent's name
+                end_phrases = [
+                    "seconded by",
+                    "duly seconded",
+                    "duly",
+                    "duty",
+                    ", seconded",
+                    ", and seconded",
+                    ", resolved",
+                    "and adopted",
+                    ", be it resolved",
+                ]
 
-    for pattern in motion_patterns:
-        # Try in current paragraph
-        matches = re.findall(pattern, p_text, re.IGNORECASE)
-        if matches:
-            debug_print("Found motion pattern match in paragraph", matches[0])
-            result["proponent"] = ", ".join(name.strip().upper() for name in matches)
-            return True
+                end_pos = len(p_text) 
 
-        # Try in full text
-        matches = re.findall(pattern, text_content, re.IGNORECASE)
-        if matches:
-            debug_print("Found motion pattern match in full text", matches[0])
-            result["proponent"] = ", ".join(name.strip().upper() for name in matches)
-            return True
+             
+                for phrase in end_phrases:
+                    pos = p_text.lower().find(phrase, start_pos)
+                    if pos > 0 and pos < end_pos:
+                        end_pos = pos
 
-    debug_print("No proponent found in", p_text)
-    return False
+                if start_pos > 0 and end_pos > start_pos:
+              
+                    proponent_text = p_text[start_pos:end_pos].strip()
+
+                    proponent_text = proponent_text.strip(",").strip()
+
+                    # Ensure we have proper naming convention (Hon.)
+                    if " and hon." in proponent_text.lower():
+                        
+                        proponents = []
+                        for part in proponent_text.split(" and "):
+                            
+                            if "hon" in part.lower():
+                                proponents.append(part.strip())
+
+                        if proponents:
+                            result["proponent"] = ", ".join(proponents).upper()
+                            print(
+                                f"Extracted multiple proponents: {result['proponent']}"
+                            )
+                            break
+                    elif "hon" in proponent_text.lower():
+                        
+                        proponent_text = " ".join(proponent_text.split())
+                        result["proponent"] = proponent_text.strip().upper()
+                        print(f"Extracted proponent: {result['proponent']}")
+                        break
+
+    if result["proponent"] is None:
+        result["proponent"] = None
 
 
-def extract_date(text_content, result):
+def extract_date(text_content, result, filename):
     """
     Extract the date from the document path.
     """
@@ -272,8 +265,40 @@ def extract_date(text_content, result):
                             return True
                     except ValueError:
                         continue
+    
+    year_match = re.search(r"(\d{4})", filename)
+    year = year_match.group(1) if year_match else None
+
+    if not result["date_enacted"] and year:
+        result["date_enacted"] = f"{year}-01-01"
+        result["date_note"] = "Estimated based on year only."
+        return True
     return False
 
+def extract_detected_text(soup, result):
+    """
+    Extract the detected text from the document.
+    """
+    word_limit = 1500
+    document_div = soup.find("div", class_="document")
+    if document_div:
+    
+        p_tags = document_div.find_all("p")
+
+        all_paragraphs = [p.get_text(strip=True) for p in p_tags]
+
+    
+        full_text = "\n\n".join(all_paragraphs)
+        words = full_text.split()
+
+        if len(words) > word_limit:
+            limited_text = " ".join(words[:word_limit])
+            
+            result["detected_text"] = limited_text
+            return True
+        else:
+            result["detected_text"] = full_text
+            return True
 
 def parse_date(date_str):
     """
@@ -308,46 +333,3 @@ def parse_date(date_str):
             continue
 
     return None
-
-
-def standardize_document_number(number, doc_type, year=None):
-    """
-    Standardize ordinance/resolution numbers to a sortable format.
-
-    Args:
-        number: The original number string
-        doc_type: 'ordinance' or 'resolution'
-        year: Optional year to use if not present in the number
-
-    Returns:
-        str: Standardized number in format NN-YYYY or NN-NNN-YYYY format
-    """
-    if not number:
-        return None
-
-    # Extract year if present in the number
-    year_in_number = None
-
-    # Check for YYYY-NN or YYYY-NN-NNN format
-    year_prefix_match = re.match(r"^(\d{4})-(.+)$", number)
-    if year_prefix_match:
-        year_in_number = year_prefix_match.group(1)
-        num = year_prefix_match.group(2)
-        return f"{num}-{year_in_number}"
-
-    # Check for NN-YYYY format
-    year_suffix_match = re.match(r"^(.+)-(\d{4})$", number)
-    if year_suffix_match:
-        num = year_suffix_match.group(1)
-        year_in_number = year_suffix_match.group(2)
-        return f"{num}-{year_in_number}"  # Already in desired format
-
-    # If we have a simple number without year (50-A, 243, 120)
-    # and we have a year from context (filename or content)
-    if year:
-        # Try to extract year from filename if it's in the format YYYY
-        if re.match(r"^\d{4}$", str(year)):
-            return f"{number}-{year}"
-
-    # If we can't standardize, return as is
-    return number

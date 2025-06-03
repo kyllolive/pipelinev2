@@ -22,22 +22,12 @@ def main():
 
         for html_file in html_files:
             extraction_result = extract_document(args.doc_type, html_file)
+            print(extraction_result)
             results.append(extraction_result)
+        
 
-        with open("results.csv", "w", newline="") as csvfile:
-            fieldnames = [
-                "filename",
-                "document_type",
-                "ordinance_number",
-                "resolution_number",
-                "date_enacted",
-                "date_note",
-                "title",
-                "proponent",
-            ]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(results)
+
+        
 
     except Exception as e:
         print(e)

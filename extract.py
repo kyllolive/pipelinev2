@@ -7,6 +7,8 @@ from utils import (
     extract_number_from_filename,
     extract_title,
     extract_proponent,
+    extract_date,
+    extract_detected_text,
 )
 
 
@@ -27,18 +29,24 @@ def extract_document(document_type, document_path):
         html_content = file.read()
 
     soup = BeautifulSoup(html_content, "lxml")
-    text_content = " ".join(div.get_text() for div in soup.select(".text"))
+    text_divs = soup.select(".text")
+    text_content = ""
+    for div in text_divs:
+        text_content += div.get_text()
 
     result = {
+        "detected_text": None,
         "ordinance_number": None,
         "resolution_number": None,
         "document_type": None,
         "title": None,
         "proponent": None,
-        "date": None,
+        "date_enacted": None,
+        "date_note": None,
+        "filename": f"{os.path.basename(document_path).replace('.html', '')}",
     }
 
-    document_type = extract_document_type(document_type).lower()
+    result["document_type"] = extract_document_type(document_type).lower()
     def_res = extract_number_from_filename(document_path)
 
     if document_type == "other":
@@ -48,14 +56,22 @@ def extract_document(document_type, document_path):
     for p in soup.find_all("p"):
         if extract_numbers_from_text(p.get_text().strip(), text_content, result):
             break
-        if result["title"] is None:
-            extract_title(
-                p.get_text().strip(), text_content, result, document_type, document_path
-            )
-        if result["proponent"] is None:
-            extract_proponent(p.get_text().strip(), text_content, result)
+    
 
     if result["ordinance_number"] is None and result["resolution_number"] is None:
         result.update(def_res)
+
+    if result["title"] is None:
+        extract_title(soup, text_content, result)
+
+    if result["proponent"] is None:
+        extract_proponent(soup, text_content, result)
+
+    if result["date_enacted"] is None:
+        extract_date(text_content, result, document_path)
+
+    if result["detected_text"] is None:
+        extract_detected_text(soup,result)
+
 
     return result
