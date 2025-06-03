@@ -22,13 +22,11 @@ def main():
 
         for html_file in html_files:
             extraction_result = extract_document(args.doc_type, html_file)
-            print(extraction_result)
             results.append(extraction_result)
         
+        print(results)
 
-
-        
-
+        #Build proponent ids column    
     except Exception as e:
         print(e)
 

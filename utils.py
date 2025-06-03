@@ -166,8 +166,7 @@ def extract_proponent(soup, text_content, result):
                 "after due deliberation" in p_text.lower()
                 and "on motion of" in p_text.lower()
             ):
-                print(f"Found target paragraph: {p_text[:100]}...")
-
+    
                 # Get the text after "on motion of"
                 start_phrase = "on motion of"
                 start_pos = p_text.lower().find(start_phrase) + len(start_phrase)
@@ -210,15 +209,13 @@ def extract_proponent(soup, text_content, result):
 
                         if proponents:
                             result["proponent"] = ", ".join(proponents).upper()
-                            print(
-                                f"Extracted multiple proponents: {result['proponent']}"
-                            )
+                          
                             break
                     elif "hon" in proponent_text.lower():
                         
                         proponent_text = " ".join(proponent_text.split())
                         result["proponent"] = proponent_text.strip().upper()
-                        print(f"Extracted proponent: {result['proponent']}")
+                        
                         break
 
     if result["proponent"] is None:
