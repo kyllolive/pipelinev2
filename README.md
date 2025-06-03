@@ -1,0 +1,1 @@
+1. RUN `python main.py --doc-type "ordinance" --doc-path "./ordinances`

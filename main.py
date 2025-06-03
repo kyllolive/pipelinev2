@@ -1,14 +1,43 @@
 import os
 from extract import extract_document
+import glob
+import argparse
+import csv
 
 
 def main():
-    doc_type = os.getenv("DOC_TYPE")
-    doc_path = os.getenv("DOC_PATH")
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Process HTML documents")
+    parser.add_argument("--doc-type", required=True, help="Type of document to process")
+    parser.add_argument(
+        "--doc-path", required=True, help="Path to directory containing HTML files"
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
 
     try:
-        extraction_result = extract_document(doc_type, doc_path)
-        print(extraction_result)
+        html_files = glob.glob(os.path.join(args.doc_path, "*.html"))
+        results = []
+
+        for html_file in html_files:
+            extraction_result = extract_document(args.doc_type, html_file)
+            results.append(extraction_result)
+
+        with open("results.csv", "w", newline="") as csvfile:
+            fieldnames = [
+                "filename",
+                "document_type",
+                "ordinance_number",
+                "resolution_number",
+                "date_enacted",
+                "date_note",
+                "title",
+                "proponent",
+            ]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(results)
 
     except Exception as e:
         print(e)
