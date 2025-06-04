@@ -34,7 +34,13 @@ def extract_document(document_type, document_path):
     for div in text_divs:
         text_content += div.get_text()
 
+    filename = os.path.basename(document_path).replace(".html", "")
+    # Remove prefix and suffix to get just the year-number
+    filename = filename.replace("olmocr-codification_ordinances_", "")
+    filename = filename.replace("olmocr-codification_resolutions_", "")
+    filename = filename.replace("_pdf", "")
     result = {
+        "filename": filename,
         "detected_text": None,
         "ordinance_number": None,
         "resolution_number": None,
@@ -43,7 +49,6 @@ def extract_document(document_type, document_path):
         "proponent": None,
         "date_enacted": None,
         "date_note": None,
-        "filename": f"{os.path.basename(document_path).replace('.html', '')}",
     }
 
     result["document_type"] = extract_document_type(document_type).lower()
@@ -56,7 +61,6 @@ def extract_document(document_type, document_path):
     for p in soup.find_all("p"):
         if extract_numbers_from_text(p.get_text().strip(), text_content, result):
             break
-    
 
     if result["ordinance_number"] is None and result["resolution_number"] is None:
         result.update(def_res)
@@ -71,7 +75,6 @@ def extract_document(document_type, document_path):
         extract_date(text_content, result, document_path)
 
     if result["detected_text"] is None:
-        extract_detected_text(soup,result)
-
+        extract_detected_text(soup, result)
 
     return result

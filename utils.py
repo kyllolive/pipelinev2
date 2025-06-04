@@ -14,16 +14,18 @@ def extract_number_from_filename(filename):
     file_path = os.path.basename(filename)
 
     # Handle 2009 files with errors specially
-    if re.search(r"res-dataset_2009-\d+-[_¬åL]", file_path):
+    if re.search(r"olmocr-codification_ordinances_2009-\d+-[_¬åL]", file_path):
         pass
     else:
-        # Case 1: Resolution file pattern (res-dataset_YYYY_NN)
-        res_match = re.search(r"res-dataset_(\d{4}-\d+)_", file_path)
+        # Case 1: Resolution file pattern (olmocr-codification_resolutions_YYYY_NN)
+        res_match = re.search(
+            r"olmocr-codification_resolutions_(\d{4}-\d+)_", file_path
+        )
 
         if res_match:
             result["resolution_number"] = f"{res_match.group(1)}"
-        # Case 2: Ordinance file pattern (dataset_YYYY_NN)
-        ord_match = re.search(r"dataset_(\d{4}-\d+)_", file_path)
+        # Case 2: Ordinance file pattern (olmocr-codification_ordinances_YYYY_NN)
+        ord_match = re.search(r"olmocr-codification_ordinances_(\d{4}-\d+)_", file_path)
         if ord_match:
             result["ordinance_number"] = f"{ord_match.group(1)}"
 
@@ -97,7 +99,7 @@ def extract_title(soup, text_content, result):
         if title:
             result["title"] = title
             return True
-        
+
     if title is None:
         title_match = None
         for prefix in title_prefixes:
@@ -123,6 +125,7 @@ def extract_title(soup, text_content, result):
 
     return False
 
+
 def extract_proponent(soup, text_content, result):
     """
     Extract the proponent from the document text.
@@ -143,9 +146,7 @@ def extract_proponent(soup, text_content, result):
     for p in soup.find_all("p"):
         p_text = p.get_text().strip()
 
-  
         if any(keyword in p_text for keyword in proponent_keywords):
-    
             for keyword in proponent_keywords:
                 if keyword in p_text:
                     p_text = p_text.replace(keyword, "").strip()
@@ -154,10 +155,9 @@ def extract_proponent(soup, text_content, result):
             hon_matches = re.findall(hon_pattern, p_text)
 
             if hon_matches:
-         
                 result["proponent"] = ", ".join(hon_matches)
             else:
-                result["proponent"] = None 
+                result["proponent"] = None
             break
     if result["proponent"] is None:
         for p in soup.find_all("p"):
@@ -166,7 +166,6 @@ def extract_proponent(soup, text_content, result):
                 "after due deliberation" in p_text.lower()
                 and "on motion of" in p_text.lower()
             ):
-    
                 # Get the text after "on motion of"
                 start_phrase = "on motion of"
                 start_pos = p_text.lower().find(start_phrase) + len(start_phrase)
@@ -184,38 +183,33 @@ def extract_proponent(soup, text_content, result):
                     ", be it resolved",
                 ]
 
-                end_pos = len(p_text) 
+                end_pos = len(p_text)
 
-             
                 for phrase in end_phrases:
                     pos = p_text.lower().find(phrase, start_pos)
                     if pos > 0 and pos < end_pos:
                         end_pos = pos
 
                 if start_pos > 0 and end_pos > start_pos:
-              
                     proponent_text = p_text[start_pos:end_pos].strip()
 
                     proponent_text = proponent_text.strip(",").strip()
 
                     # Ensure we have proper naming convention (Hon.)
                     if " and hon." in proponent_text.lower():
-                        
                         proponents = []
                         for part in proponent_text.split(" and "):
-                            
                             if "hon" in part.lower():
                                 proponents.append(part.strip())
 
                         if proponents:
                             result["proponent"] = ", ".join(proponents).upper()
-                          
+
                             break
                     elif "hon" in proponent_text.lower():
-                        
                         proponent_text = " ".join(proponent_text.split())
                         result["proponent"] = proponent_text.strip().upper()
-                        
+
                         break
 
     if result["proponent"] is None:
@@ -262,7 +256,7 @@ def extract_date(text_content, result, filename):
                             return True
                     except ValueError:
                         continue
-    
+
     year_match = re.search(r"(\d{4})", filename)
     year = year_match.group(1) if year_match else None
 
@@ -272,6 +266,7 @@ def extract_date(text_content, result, filename):
         return True
     return False
 
+
 def extract_detected_text(soup, result):
     """
     Extract the detected text from the document.
@@ -279,23 +274,22 @@ def extract_detected_text(soup, result):
     word_limit = 1500
     document_div = soup.find("div", class_="document")
     if document_div:
-    
         p_tags = document_div.find_all("p")
 
         all_paragraphs = [p.get_text(strip=True) for p in p_tags]
 
-    
         full_text = "\n\n".join(all_paragraphs)
         words = full_text.split()
 
         if len(words) > word_limit:
             limited_text = " ".join(words[:word_limit])
-            
+
             result["detected_text"] = limited_text
             return True
         else:
             result["detected_text"] = full_text
             return True
+
 
 def parse_date(date_str):
     """
