@@ -17,8 +17,8 @@ def normalize_name(name):
 script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(script_dir)
 unique_authors_path = os.path.join(script_dir, "unique_authors.csv")
-ordinances_input_path = os.path.join(parent_dir, "ordinances-1.csv")
-ordinances_output_path = os.path.join(parent_dir, "ordinances-1-cuid.csv")
+ordinances_input_path = os.path.join(parent_dir, "resolutions-1.csv")
+ordinances_output_path = os.path.join(parent_dir, "resolutions-1-cuid.csv")
 
 # First, load the name mappings from unique_authors.csv into a dictionary
 name_to_id = {}
