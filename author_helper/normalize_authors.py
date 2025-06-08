@@ -16,13 +16,13 @@ def normalize_name(name):
 # Get correct file paths
 script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(script_dir)
-unique_authors_path = os.path.join(script_dir, "unique_authors.csv")
-ordinances_input_path = os.path.join(parent_dir, "resolutions-1.csv")
-ordinances_output_path = os.path.join(parent_dir, "resolutions-1-cuid.csv")
+unique_authors_path = os.path.join(script_dir, "unique_res_authors.csv")
+ordinances_input_path = os.path.join(parent_dir, "resolutions-3-summarized.csv")
+ordinances_output_path = os.path.join(parent_dir, "resolutions-3-cuid.csv")
 
 # First, load the name mappings from unique_authors.csv into a dictionary
 name_to_id = {}
-with open(unique_authors_path, "r") as f:
+with open(unique_authors_path, "r", encoding='utf-8') as f:
     reader = csv.DictReader(f)
     for row in reader:
         # Create a normalized version of the full name for comparison
@@ -78,8 +78,8 @@ def process_proponents(proponents_str):
 
 # Process the main CSV file
 with (
-    open(ordinances_input_path, "r") as infile,
-    open(ordinances_output_path, "w", newline="") as outfile,
+    open(ordinances_input_path, "r", encoding='utf-8') as infile,
+    open(ordinances_output_path, "w", newline="", encoding='utf-8') as outfile,
 ):
     reader = csv.reader(infile)
     writer = csv.writer(outfile)
@@ -87,6 +87,13 @@ with (
     # Read header row
     header = next(reader)
     print(f"Input CSV headers: {header}")  # Debug print
+
+    # Check if proponent_ids column already exists and remove it
+    proponent_ids_index = None
+    if "proponent_ids" in header:
+        proponent_ids_index = header.index("proponent_ids")
+        header.pop(proponent_ids_index)
+        print(f"Removed existing proponent_ids column at index {proponent_ids_index}")
 
     # Find the proponent column index
     proponent_column_index = header.index(
@@ -99,8 +106,12 @@ with (
     # Process each row
     for row in reader:
         if len(row) > 0:  # Make sure row has content
+            # Remove the old proponent_ids column data if it existed
+            if proponent_ids_index is not None and len(row) > proponent_ids_index:
+                row.pop(proponent_ids_index)
+            
             proponent_str = (
-                row[proponent_column_index] if row[proponent_column_index] else ""
+                row[proponent_column_index] if len(row) > proponent_column_index and row[proponent_column_index] else ""
             )
             processed_proponents = process_proponents(proponent_str)
             print(
