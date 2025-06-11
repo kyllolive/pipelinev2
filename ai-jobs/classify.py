@@ -5,20 +5,41 @@ import gc
 import os
 import re
 import time
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 def classify_batch_optimized(
-    model, tokenizer, titles, categories, subcategories, document_type, device
+    model,
+    tokenizer,
+    titles,
+    summaries,
+    categories,
+    subcategories,
+    document_type,
+    device,
 ):
     """
-    Optimized batch classification with single model call per title.
+    Optimized batch classification with single model call per title and summary.
     Returns results and performance statistics.
     """
+    # Determine default category based on document type
+    default_category = (
+        "GENERAL_ORDINANCE"
+        if document_type.lower() == "ordinance"
+        else "GENERAL_RESOLUTION"
+    )
+
     # Determine default subcategory based on document type
     default_subcategory = (
         "GENERAL_ORDINANCE"
         if document_type.lower() == "ordinance"
-        else "GENERAL_RESOLUTION"
+        else "RESOLUTION_ONLY"
     )
 
     all_results = []
@@ -26,13 +47,28 @@ def classify_batch_optimized(
     total_output_tokens = 0
     batch_start_time = time.time()
 
-    for title in titles:
-        # Single comprehensive prompt that does everything at once
-        prompt = f"""You are an expert municipal ordinance classifier. Analyze and classify this ordinance title:
+    for i, title in enumerate(titles):
+        summary = summaries[i] if i < len(summaries) and pd.notna(summaries[i]) else ""
+
+        # Log the title and summary being processed (using print for immediate visibility)
+        print(f"    🔍 Processing item {i + 1}/{len(titles)}:")
+        print(f"        📄 TITLE: {title[:100]}{'...' if len(title) > 100 else ''}")
+
+        if summary and summary.strip():
+            print(
+                f"        📝 SUMMARY: {summary[:200]}{'...' if len(summary) > 200 else ''}"
+            )
+        else:
+            print(f"        📝 SUMMARY: [No summary available]")
+
+        # Single comprehensive prompt that uses both title and summary
+        prompt = f"""You are an expert municipal ordinance classifier. Analyze and classify this ordinance based on its title and summary:
 
 TITLE: "{title}"
 
-AVAILABLE CATEGORIES: {", ".join(categories[:-1])}
+SUMMARY: "{summary}"
+
+AVAILABLE CATEGORIES: {", ".join(categories)}
 
 AVAILABLE DOCUMENT TYPES: {", ".join(subcategories)}
 
@@ -102,9 +138,9 @@ CONFIDENCE: 85"""
                 if cat in categories or cat == "NO_CLASSIFICATION"
             ]
             if not valid_categories:
-                valid_categories = ["NO_CLASSIFICATION"]
+                valid_categories = [default_category]
         else:
-            valid_categories = ["NO_CLASSIFICATION"]
+            valid_categories = [default_category]
 
         # Extract document type
         if type_match:
@@ -116,6 +152,14 @@ CONFIDENCE: 85"""
 
         # Extract confidence
         confidence = int(confidence_match.group(1)) if confidence_match else 75
+
+        # Log the classification result
+        print(
+            f"        ✅ RESULT: Categories: {', '.join(valid_categories)} | Type: {doc_type} | Confidence: {confidence}%"
+        )
+        print(
+            f"        ⏱️  Tokens: {input_token_count} input + {output_token_count} output\n"
+        )
 
         all_results.append(
             {
@@ -154,6 +198,7 @@ def classify_ordinances_batch(
     model,
     tokenizer,
     titles,
+    summaries,
     categories,
     subcategories,
     document_type,
@@ -169,6 +214,7 @@ def classify_ordinances_batch(
     # Process in larger batches
     for i in range(0, len(titles), batch_size):
         batch_titles = titles[i : i + batch_size]
+        batch_summaries = summaries[i : i + batch_size]
         print(
             f"Processing batch {i // batch_size + 1}/{(len(titles) + batch_size - 1) // batch_size}: {len(batch_titles)} titles"
         )
@@ -179,6 +225,7 @@ def classify_ordinances_batch(
                 model,
                 tokenizer,
                 batch_titles,
+                batch_summaries,
                 categories,
                 subcategories,
                 document_type,
@@ -221,10 +268,15 @@ def classify_ordinances_batch(
             default_subcategory = (
                 "GENERAL_ORDINANCE"
                 if document_type.lower() == "ordinance"
+                else "RESOLUTION_ONLY"
+            )
+            default_category = (
+                "GENERAL_ORDINANCE"
+                if document_type.lower() == "ordinance"
                 else "GENERAL_RESOLUTION"
             )
             for _ in batch_titles:
-                all_classifications.append("NO_CLASSIFICATION")
+                all_classifications.append(default_category)
                 all_subcategories.append(default_subcategory)
                 all_confidence_scores.append(0)
                 all_diagnostic_notes.append(f"Error: {str(e)}")
@@ -282,12 +334,15 @@ def main():
         "CHILD_AND_YOUTH",
         "CONSUMER_PROTECTION_AND_COMMERCE",
         "CULTURE_AND_HERITAGE",
+        "COMMUNITY_DEVELOPMENT",
         "DIGITAL_GOVERNANCE_AND_SERVICES",
         "DISASTER_RISK_REDUCTION",
         "EDUCATION",
         "ENVIRONMENT",
         "GAMES_AND_RECREATION",
         "GENDER_AND_DEVELOPMENT",
+        "GENERAL_ORDINANCE",
+        "GENERAL_RESOLUTION",
         "HOUSING",
         "INDIGENOUS_AND_MINORITY_GROUPS",
         "INFRASTRUCTURE_AND_PUBLIC_WORKS",
@@ -295,7 +350,6 @@ def main():
         "LAND_USE_AND_ZONING",
         "LIVELIHOOD_AND_EMPLOYMENT",
         "LOCAL_ECONOMIC_DEVELOPMENT",
-        "LOCAL_GOVERNMENT_ADMINISTRATION",
         "NATURAL_RESOURCES",
         "PARKS_AND_PLAYGROUNDS",
         "PERSONS_WITH_DISABILITIES",
@@ -304,8 +358,9 @@ def main():
         "PUBLIC_HEALTH_AND_SANITATION",
         "PUBLIC_SAFETY_AND_PEACE",
         "PUBLIC_UTILITIES",
-        "REVENUE_CODE",
+        "REVENUE_AND_RESOURCE_MANAGEMENT",
         "SENIOR_CITIZENS",
+        "SERVICE_DELIVERY",
         "SOCIAL_WELFARE",
         "SPORTS",
         "TOURISM",
@@ -327,17 +382,17 @@ def main():
         "BUDGET_APPROPRIATION",
         "EMERGENCY_DECLARATION",
         "GENERAL_ORDINANCE",
-        "GENERAL_RESOLUTION",
         "IMPLEMENTING_RULES_AND_REGULATIONS",
         "REPEAL_OR_REVOCATION",
+        "RESOLUTION_ONLY",
         "SUPPLEMENTAL_BUDGET",
     ]
 
-    df = pd.read_csv("ordinances-1-cuid.csv")
+    df = pd.read_csv("ordinances-2-summarized.csv")
 
     print(f"Loaded {len(df)} ordinances")
 
-    output_file = "ordinances-2.csv"
+    output_file = "ordinances-2-classified.csv"
     start_index = 0
 
     if os.path.exists(output_file):
@@ -376,10 +431,29 @@ def main():
         df["confidence_score"] = None
         df["diagnostic_note"] = None
 
+    # Check if summary column exists and has data
+    if "summary" in df.columns:
+        summary_count = df["summary"].notna().sum()
+        print(f"Found {summary_count} summaries out of {len(df)} total records")
+
+        # Show a sample of summaries
+        if summary_count > 0:
+            print("\nSample summaries:")
+            for i, row in df.head(3).iterrows():
+                if pd.notna(row.get("summary", "")):
+                    print(f"  Row {i}: {str(row['summary'])[:100]}...")
+    else:
+        print("No 'summary' column found in the CSV")
+
     # Process ordinances in batches
     batch_size = 16  # Increased from 4 to 16
 
     titles_to_process = df["title"].iloc[start_index:].tolist()
+    summaries_to_process = (
+        df["summary"].iloc[start_index:].tolist()
+        if "summary" in df.columns
+        else [""] * len(titles_to_process)
+    )
 
     if not titles_to_process:
         print("No ordinances to process. Exiting.")
@@ -393,6 +467,7 @@ def main():
     for chunk_start in range(0, len(titles_to_process), chunk_size):
         chunk_end = min(chunk_start + chunk_size, len(titles_to_process))
         chunk_titles = titles_to_process[chunk_start:chunk_end]
+        chunk_summaries = summaries_to_process[chunk_start:chunk_end]
 
         print(
             f"Processing chunk {chunk_start // chunk_size + 1}/{(len(titles_to_process) + chunk_size - 1) // chunk_size}"
@@ -403,6 +478,7 @@ def main():
                 model,
                 tokenizer,
                 chunk_titles,
+                chunk_summaries,
                 categories,
                 subCategories,
                 "ordinance",

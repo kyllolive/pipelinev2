@@ -103,8 +103,7 @@ def summarize_batch_optimized(texts, model, tokenizer, device):
 
         **STRUCTURE:**
         1. First paragraph: Primary purpose, scope, and main regulations
-        2. Second paragraph: Key compliance requirements and enforcement
-        3. Third paragraph (if needed): Implementation details and effective dates
+        2. Second paragraph (if needed): Implementation details and effective dates
 
         Write a focused, concise analysis that captures the essential legal impact:"""
 
@@ -126,7 +125,7 @@ def summarize_batch_optimized(texts, model, tokenizer, device):
         with torch.no_grad():
             output = model.generate(
                 **input_ids,
-                max_new_tokens=1000,  # Fixed to 600 tokens
+                max_new_tokens=200,  # Fixed to 200 tokens
                 do_sample=False,  # Deterministic generation
                 pad_token_id=tokenizer.eos_token_id,
                 repetition_penalty=1.1,  # Slight penalty to avoid loops
@@ -311,7 +310,7 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(model_path)
 
         # Prepare output file and check for existing progress
-        output_file = "resolutions-3-summarized.csv"
+        output_file = "resolutions-2-summarized.csv"
         start_index = 0
 
         if os.path.exists(output_file):
